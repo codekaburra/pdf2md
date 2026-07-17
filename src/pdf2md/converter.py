@@ -6,6 +6,7 @@ from typing import List, Optional, Sequence
 import pymupdf
 import pymupdf4llm
 
+from pdf2md.cjk import unwrap_cjk_code
 from pdf2md.cleaner import clean_pages
 
 # A page needs at least this many extracted characters to count as "has text".
@@ -52,7 +53,7 @@ def convert(
     finally:
         doc.close()
 
-    page_md = [_strip_trailing_rule(item["text"]) for item in data]
+    page_md = [unwrap_cjk_code(_strip_trailing_rule(item["text"])) for item in data]
     if filter_headers:
         page_md = clean_pages(page_md)
     body = "\n\n".join(page for page in page_md if page.strip()).strip()
