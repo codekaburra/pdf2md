@@ -5,6 +5,7 @@ import sys
 import pymupdf
 import pytest
 
+import pdf2md.converter as converter
 from pdf2md.chunker import chunk_markdown
 from pdf2md.converter import ScannedPDFError, convert
 
@@ -86,6 +87,29 @@ def test_chunks_from_converted_markdown(sample_pdf):
     assert any(c["level"] > 0 for c in chunks)
     all_paths = " ".join(c["path"] for c in chunks)
     assert any(section in all_paths for section in SECTIONS)
+
+
+def test_convert_unwraps_cjk_code(sample_pdf, monkeypatch):
+    """convert() must route pymupdf4llm's output through the CJK unwrapper.
+
+    Triggering the real defect needs a CJK font whose glyphs are all
+    fixed-width (the flag pymupdf4llm reads as "this is code"). No font
+    available here qualifies — PyMuPDF's own china-t carries proportional
+    Latin glyphs, so it is not flagged — which makes a genuine fixture PDF
+    impossible to build. Stub the extractor instead: the unwrapping rules
+    are covered in test_cjk.py, so what is left to pin down is the wiring.
+    """
+    cjk_markdown = "# `數據規格`\n\n`香港島區` and `CSV`"
+    monkeypatch.setattr(
+        converter.pymupdf4llm,
+        "to_markdown",
+        lambda doc, **kwargs: [{"text": cjk_markdown}],
+    )
+    md = convert(str(sample_pdf), pages=[0])
+
+    assert "`數據規格`" not in md  # prose unwrapped
+    assert "數據規格" in md  # ...without losing the text
+    assert "`CSV`" in md  # genuine code left alone
 
 
 def _run_cli(*args):

@@ -91,6 +91,23 @@ Output format:
 At query time you only feed the relevant chunks into the prompt instead of the
 whole document, saving a large share of tokens. For RAG, embed each chunk directly.
 
+## CJK documents
+
+CJK fonts are fixed-width, so pymupdf4llm's monospace-means-code rule wraps
+every Chinese/Japanese/Korean run in backticks. `pdf2md` undoes this
+automatically: prose comes out as prose, while spans holding ASCII
+identifiers (`CSV`, `print("...")`) stay marked as code. No flag needed.
+
+## Known limitations
+
+- **Scanned PDFs**: no text layer, no conversion — see below.
+- **Wrapped table cells lose a space**: when a cell's text wraps, pymupdf4llm
+  joins the lines without one, so `Sheung Shui` can come out as `SheungShui`.
+  Affects table-heavy documents; the text is present, just run together.
+- **Heading detection is font-size based**: documents whose body text is set
+  at heading size (common in short CJK spec sheets) may promote paragraphs to
+  headings, which in turn coarsens `--chunks` output.
+
 ## Limitation: scanned (image-only) PDFs
 
 This tool does **not** perform OCR. A scanned PDF with no text layer will error
