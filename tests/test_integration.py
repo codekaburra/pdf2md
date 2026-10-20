@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 
@@ -134,6 +135,36 @@ def test_cli_end_to_end(sample_pdf, tmp_path):
 def test_cli_missing_file(tmp_path):
     result = _run_cli(str(tmp_path / "nope.pdf"))
     assert result.returncode == 1
+
+
+@pytest.mark.parametrize("artifact", ["markdown", "chunks"])
+@pytest.mark.parametrize("alias", ["direct", "symlink", "hardlink"])
+def test_cli_preserves_source_pdf(sample_pdf, tmp_path, artifact, alias):
+    source = tmp_path / ("source.pdf" if artifact == "markdown" else "source.chunks.json")
+    original = sample_pdf.read_bytes()
+    source.write_bytes(original)
+    destination = source
+    if alias != "direct":
+        destination = tmp_path / ("alias.md" if artifact == "markdown" else "alias.chunks.json")
+        if alias == "symlink":
+            destination.symlink_to(source)
+        else:
+            os.link(source, destination)
+    output = destination if artifact == "markdown" else destination.with_name(
+        destination.name.removesuffix(".chunks.json") + ".md"
+    )
+    args = [str(source), "-o", str(output)]
+    if artifact == "chunks":
+        args.append("--chunks")
+
+    result = _run_cli(*args)
+
+    assert result.returncode == 1
+    assert "refusing to overwrite input PDF" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert source.read_bytes() == original
+    if artifact == "chunks":
+        assert not output.exists()
 
 
 def test_cli_scanned_exit_code(scanned_pdf):

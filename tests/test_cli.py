@@ -1,4 +1,5 @@
 import json
+import os
 
 import pytest
 
@@ -13,6 +14,44 @@ def test_parse_pages_single_ranges_and_deduplicates():
 def test_parse_pages_rejects_invalid_specs(spec):
     with pytest.raises(ValueError):
         cli.parse_pages(spec)
+
+
+@pytest.mark.parametrize("artifact", ["markdown", "chunks"])
+@pytest.mark.parametrize("alias", ["direct", "relative", "symlink", "hardlink"])
+def test_main_preserves_input_when_output_aliases_it(
+    tmp_path, monkeypatch, capsys, artifact, alias
+):
+    input_pdf = tmp_path / ("report.pdf" if artifact == "markdown" else "report.chunks.json")
+    original = b"%PDF original bytes must survive"
+    input_pdf.write_bytes(original)
+    destination = input_pdf
+    if alias == "relative":
+        monkeypatch.chdir(tmp_path)
+        destination = input_pdf.relative_to(tmp_path)
+    elif alias in {"symlink", "hardlink"}:
+        destination = tmp_path / ("alias.md" if artifact == "markdown" else "alias.chunks.json")
+        if alias == "symlink":
+            destination.symlink_to(input_pdf)
+        else:
+            os.link(input_pdf, destination)
+
+    output_md = destination if artifact == "markdown" else destination.with_name(
+        destination.name.removesuffix(".chunks.json") + ".md"
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("output collisions must be rejected before conversion")
+
+    monkeypatch.setattr(cli, "convert", fail_if_called)
+    args = [str(input_pdf), "-o", str(output_md)]
+    if artifact == "chunks":
+        args.append("--chunks")
+
+    assert cli.main(args) == 1
+    assert input_pdf.read_bytes() == original
+    assert "refusing to overwrite input PDF" in capsys.readouterr().err
+    if artifact == "chunks":
+        assert not output_md.exists()
 
 
 def test_main_writes_default_output_and_uses_all_pages(tmp_path, monkeypatch, capsys):
