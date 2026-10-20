@@ -79,6 +79,29 @@ def test_hash_inside_code_fence_not_a_heading():
     assert "# not a heading" in chunks[0]["content"]
 
 
+@pytest.mark.parametrize(
+    "opening, inner, closing",
+    [
+        ("````markdown", "```", "````"),
+        ("```", "~~~", "```"),
+        ("~~~", "```", "~~~~"),
+        ("```", "``` trailing text", "```"),
+        ("```", "    ```", "   ````  "),
+    ],
+)
+def test_only_matching_fence_closes_code_block(opening, inner, closing):
+    block = f"{opening}\n{inner}\n# not a heading\n{closing}"
+    chunks = chunk_markdown(f"# Real\n\n{block}\n\n## Next\n\nBody")
+
+    assert [chunk["heading"] for chunk in chunks] == ["Real", "Next"]
+    assert chunks[0]["content"] == block.strip()
+
+
+def test_backtick_in_info_string_is_not_an_opening_fence():
+    md = "```invalid`info\n# Real\n\nBody"
+    assert [chunk["heading"] for chunk in chunk_markdown(md)] == ["(preamble)", "Real"]
+
+
 def test_chunk_fields_and_chars():
     chunks = chunk_markdown(SAMPLE, source="manual")
     for c in chunks:
