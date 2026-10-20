@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from pdf2md.chunker import chunk_markdown
 
 SAMPLE = """intro paragraph before any heading.
@@ -38,6 +40,27 @@ def test_preamble_without_source():
     assert len(chunks) == 1
     assert chunks[0]["heading"] == "(preamble)"
     assert chunks[0]["level"] == 0
+
+
+@pytest.mark.parametrize(
+    "heading, title",
+    [
+        ("# C#", "C#"),
+        ("## F#", "F#"),
+        ("# C# ###", "C#"),
+        ("# Step 1 #", "Step 1"),
+        ("# Issue #123#", "Issue #123#"),
+        ("# Topic ###suffix", "Topic ###suffix"),
+        ("# Topic\t###\t", "Topic"),
+        ("   ### C#", "C#"),
+    ],
+)
+def test_heading_hashes_preserve_title_and_breadcrumb(heading, title):
+    chunks = chunk_markdown(f"{heading}\n\nBody\n\n#### Child\n\nDetails")
+
+    assert chunks[0]["heading"] == title
+    assert chunks[0]["path"] == title
+    assert chunks[1]["path"] == f"{title} > Child"
 
 
 def test_empty_heading_sections_skipped():

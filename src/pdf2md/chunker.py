@@ -7,7 +7,8 @@ Pure text functions — no PDF dependency.
 import re
 from typing import Dict, List
 
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
+_HEADING_RE = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*))?$")
+_CLOSING_HASH_RE = re.compile(r"(?:^|[ \t]+)#+[ \t]*$")
 _FENCE_RE = re.compile(r"^\s{0,3}(```|~~~)")
 
 
@@ -57,7 +58,7 @@ def chunk_markdown(md: str, *, source: str = "", max_chars: int = 0) -> List[Dic
             continue
         flush()
         level = len(heading.group(1))
-        title = heading.group(2).strip()
+        title = _CLOSING_HASH_RE.sub("", heading.group(2) or "").strip()
         while stack and stack[-1]["level"] >= level:
             stack.pop()
         stack.append({"level": level, "title": title})
