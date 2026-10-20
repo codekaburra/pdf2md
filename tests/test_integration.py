@@ -79,6 +79,36 @@ def test_scanned_pdf_raises(scanned_pdf):
         convert(str(scanned_pdf))
 
 
+@pytest.fixture
+def sparse_pdf(tmp_path):
+    path = tmp_path / "sparse.pdf"
+    with pymupdf.open() as doc:
+        doc.new_page().insert_text((72, 72), "Hello world")
+        for _ in range(6):
+            doc.new_page()
+        doc.save(path)
+    return path
+
+
+@pytest.mark.parametrize("pages", [None, [0]])
+def test_convert_sparse_text_with_blank_pages(sparse_pdf, pages):
+    assert "Hello world" in convert(str(sparse_pdf), pages=pages)
+
+
+def test_convert_checks_only_selected_pages_for_text(sparse_pdf):
+    with pytest.raises(ScannedPDFError):
+        convert(str(sparse_pdf), pages=[1, 2])
+
+
+def test_cli_converts_sparse_text_pdf(sparse_pdf):
+    result = _run_cli(str(sparse_pdf), "--chunks")
+
+    assert result.returncode == 0, result.stderr
+    assert "Hello world" in sparse_pdf.with_suffix(".md").read_text(encoding="utf-8")
+    chunks = json.loads(sparse_pdf.with_suffix(".chunks.json").read_text(encoding="utf-8"))
+    assert any("Hello world" in chunk["content"] for chunk in chunks)
+
+
 def test_chunks_from_converted_markdown(sample_pdf):
     md = convert(str(sample_pdf))
     chunks = chunk_markdown(md, source="sample")

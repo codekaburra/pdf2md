@@ -111,7 +111,10 @@ identifiers (`CSV`, `print("...")`) stay marked as code. No flag needed.
 ## Limitation: scanned (image-only) PDFs
 
 This tool does **not** perform OCR. A scanned PDF with no text layer will error
-out (exit code 2). Add a text layer first with
+out (exit code 2). This check uses only the selected pages and accepts even
+short text; blank pages do not make a text document count as scanned. For mixed
+text-and-image documents, only the existing text layer can be extracted.
+Add a text layer first with
 [ocrmypdf](https://ocrmypdf.readthedocs.io/), then convert:
 
 ```bash
