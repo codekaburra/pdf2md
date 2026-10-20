@@ -132,6 +132,29 @@ def test_cli_end_to_end(sample_pdf, tmp_path):
     assert isinstance(chunks, list) and chunks
 
 
+def test_cli_preserves_numbered_headings_across_pages(tmp_path):
+    source = tmp_path / "sections.pdf"
+    headings = [f"{i}. Results" for i in range(1, 5)]
+    with pymupdf.open() as doc:
+        for heading, word in zip(headings, ["alpha", "bravo", "charlie", "delta"]):
+            page = doc.new_page()
+            page.insert_text((72, 100), heading, fontsize=22)
+            page.insert_text(
+                (72, 160), f"This section discusses {word} findings in detail.",
+                fontsize=11,
+            )
+        doc.save(source)
+
+    result = _run_cli(str(source), "--chunks")
+
+    assert result.returncode == 0, result.stderr
+    markdown = source.with_suffix(".md").read_text(encoding="utf-8")
+    chunks = json.loads(source.with_suffix(".chunks.json").read_text(encoding="utf-8"))
+    for heading in headings:
+        assert heading in markdown
+        assert any(heading in chunk["heading"] for chunk in chunks)
+
+
 def test_cli_missing_file(tmp_path):
     result = _run_cli(str(tmp_path / "nope.pdf"))
     assert result.returncode == 1

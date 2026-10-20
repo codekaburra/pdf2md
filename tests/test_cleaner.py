@@ -1,3 +1,5 @@
+import pytest
+
 from pdf2md.cleaner import clean_pages
 
 _WORDS = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"]
@@ -69,6 +71,25 @@ def test_numbered_markdown_heading_kept():
     page = "## 3. Results\n\nFindings below."
     cleaned = clean_pages([page])
     assert "## 3. Results" in cleaned[0]
+
+
+@pytest.mark.parametrize("level", range(1, 7))
+@pytest.mark.parametrize("edge", ["top", "bottom"])
+def test_repeated_numbered_headings_kept_across_pages(level, edge):
+    headings = [f"{'#' * level} {i}. Results" for i in range(1, 5)]
+    bodies = [f"Unique body about {word}." for word in _WORDS[:4]]
+    pages = [
+        f"ACME Report\n\n{heading}\n\n{body}\n\nPage {i}"
+        if edge == "top" else
+        f"ACME Report\n\n{body}\n\n{heading}\n\nPage {i}"
+        for i, (heading, body) in enumerate(zip(headings, bodies), 1)
+    ]
+
+    for heading, body, page in zip(headings, bodies, clean_pages(pages)):
+        assert heading in page
+        assert body in page
+        assert "ACME" not in page
+        assert "Page " not in page
 
 
 def test_distinct_top_lines_kept():

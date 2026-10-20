@@ -29,6 +29,8 @@ _MAX_MASKED_LEN = 80
 # characters that appear naturally in markdown lines (e.g. "#").
 _DIGIT_MASK = "�"
 
+_HEADING_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
+
 # Standalone page-number lines: "12", "- 12 -", "Page 12", "Page 12 of 30",
 # "12 / 30", "第 12 頁", optionally wrapped in dashes/underscores/asterisks.
 _PAGE_NUMBER_RE = re.compile(
@@ -63,6 +65,9 @@ def _repeating(region_sets: List[Set[str]], threshold: int) -> Set[str]:
 
 
 def _matches(line: str, keys: Set[str]) -> bool:
+    # Repeated section titles are document structure, not running headers.
+    if _HEADING_RE.match(line):
+        return False
     if _PAGE_NUMBER_RE.match(line):
         return True
     key = _normalize(line)
