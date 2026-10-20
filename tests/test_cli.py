@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 import pytest
 
@@ -181,3 +182,33 @@ def test_main_reports_page_parse_errors_before_conversion(tmp_path, monkeypatch,
 
     assert result == 1
     assert "invalid page range" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("stage", ["mkdir", "markdown", "chunks"])
+def test_main_reports_output_io_errors(tmp_path, monkeypatch, capsys, stage):
+    source = tmp_path / "report.pdf"
+    original = b"%PDF source"
+    source.write_bytes(original)
+    output = tmp_path / "out.md"
+    monkeypatch.setattr(cli, "convert", lambda *args, **kwargs: "# Report\n\nBody\n")
+    original_write = Path.write_text
+
+    def fail_write(path, *args, **kwargs):
+        if path == (output if stage == "markdown" else output.with_suffix(".chunks.json")):
+            raise OSError("simulated output failure")
+        return original_write(path, *args, **kwargs)
+
+    def fail_mkdir(*args, **kwargs):
+        raise PermissionError("simulated directory failure")
+
+    if stage == "mkdir":
+        monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+    else:
+        monkeypatch.setattr(Path, "write_text", fail_write)
+
+    assert cli.main([str(source), "-o", str(output), "--chunks"]) == 1
+    captured = capsys.readouterr()
+    assert "cannot write output" in captured.err
+    assert "simulated" in captured.err
+    assert not captured.out
+    assert source.read_bytes() == original

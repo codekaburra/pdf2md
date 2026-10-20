@@ -244,3 +244,25 @@ def test_cli_creates_output_directory(sample_pdf, tmp_path):
     result = _run_cli(str(sample_pdf), "-o", str(out))
     assert result.returncode == 0, result.stderr
     assert out.is_file()
+
+
+@pytest.mark.parametrize("blocked", ["parent", "markdown", "chunks"])
+def test_cli_output_errors_have_no_traceback(sample_pdf, tmp_path, blocked):
+    original = sample_pdf.read_bytes()
+    output = tmp_path / "out.md"
+    if blocked == "parent":
+        parent = tmp_path / "blocked"
+        parent.write_text("existing file", encoding="utf-8")
+        output = parent / "out.md"
+    elif blocked == "markdown":
+        output.mkdir()
+    else:
+        output.with_suffix(".chunks.json").mkdir()
+
+    result = _run_cli(str(sample_pdf), "-o", str(output), "--chunks")
+
+    assert result.returncode == 1
+    assert "cannot write output" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not result.stdout
+    assert sample_pdf.read_bytes() == original

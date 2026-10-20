@@ -99,19 +99,23 @@ def main(argv=None) -> int:
         print(f"pdf2md: cannot validate output paths: {exc}", file=sys.stderr)
         return 1
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(markdown, encoding="utf-8")
-    summary = f"wrote {output_path}"
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(markdown, encoding="utf-8")
+        summary = f"wrote {output_path}"
 
-    if args.chunks:
-        chunks = chunk_markdown(
-            markdown, source=input_path.stem, max_chars=args.max_chars
-        )
-        chunks_path.write_text(
-            json.dumps(chunks, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        summary += f" and {chunks_path} ({len(chunks)} chunks)"
+        if args.chunks:
+            chunks = chunk_markdown(
+                markdown, source=input_path.stem, max_chars=args.max_chars
+            )
+            chunks_path.write_text(
+                json.dumps(chunks, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            summary += f" and {chunks_path} ({len(chunks)} chunks)"
+    except OSError as exc:
+        print(f"pdf2md: cannot write output: {exc}", file=sys.stderr)
+        return 1
 
     print(summary)
     return 0
