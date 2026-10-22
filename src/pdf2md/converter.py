@@ -9,12 +9,6 @@ import pymupdf4llm
 from pdf2md.cjk import unwrap_cjk_code
 from pdf2md.cleaner import clean_pages
 
-# A page needs at least this many extracted characters to count as "has text".
-_TEXT_PAGE_MIN_CHARS = 30
-
-# If fewer than this fraction of pages have text, treat the PDF as scanned.
-_TEXT_PAGE_RATIO = 0.2
-
 # pymupdf4llm appends a horizontal-rule page separator at the end of each page.
 _TRAILING_RULE_RE = re.compile(r"(?:\n|^)-{3,}\s*$")
 
@@ -63,12 +57,7 @@ def convert(
 def _ensure_text_layer(doc: "pymupdf.Document", page_numbers: List[int]) -> None:
     if not page_numbers:
         return
-    text_pages = sum(
-        1
-        for p in page_numbers
-        if len(doc[p].get_text().strip()) >= _TEXT_PAGE_MIN_CHARS
-    )
-    if text_pages / len(page_numbers) < _TEXT_PAGE_RATIO:
+    if not any(doc[p].get_text().strip() for p in page_numbers):
         raise ScannedPDFError(
             "This PDF appears to be scanned (no usable text layer). "
             "Run OCR first, e.g.: ocrmypdf input.pdf output.pdf "

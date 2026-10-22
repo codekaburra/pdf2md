@@ -13,6 +13,8 @@ Pure text functions — no PDF dependency.
 import re
 from typing import List, Match
 
+from pdf2md._markdown import closes_fence, opening_fence
+
 # Kana, CJK ideographs (incl. extension A and compatibility), and hangul.
 # A span needs one of these to count as CJK; CJK punctuation alone is not
 # enough to justify unwrapping.
@@ -20,7 +22,6 @@ _CJK_RE = re.compile("[぀-ヿ㐀-䶿一-鿿豈-﫿가-힯]")
 
 _ASCII_LETTER_RE = re.compile(r"[A-Za-z]")
 _INLINE_CODE_RE = re.compile(r"`([^`\n]+)`")
-_FENCE_RE = re.compile(r"^\s{0,3}(?:```|~~~)")
 
 
 def _is_cjk_prose(text: str) -> bool:
@@ -41,12 +42,16 @@ def unwrap_cjk_code(md: str) -> str:
     """Strip code markup that only exists because the font was monospaced."""
     out: List[str] = []
     fence = ""  # opening fence line; empty when outside a fenced block
+    marker = ""
     block: List[str] = []
 
     for line in md.splitlines():
         if fence:
-            if _FENCE_RE.match(line):
-                if _is_cjk_prose("\n".join(block)):
+            if closes_fence(line, marker):
+                # Nested fence examples must remain code even if all text is CJK.
+                if _is_cjk_prose("\n".join(block)) and not any(
+                    opening_fence(part) for part in block
+                ):
                     out.extend(block)  # drop both fence lines
                 else:
                     out.append(fence)
@@ -56,7 +61,8 @@ def unwrap_cjk_code(md: str) -> str:
             else:
                 block.append(line)
             continue
-        if _FENCE_RE.match(line):
+        marker = opening_fence(line)
+        if marker:
             fence = line
             continue
         out.append(_INLINE_CODE_RE.sub(_unwrap_span, line))

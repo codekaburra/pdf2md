@@ -71,8 +71,15 @@ def main(argv=None) -> int:
         print(f"pdf2md: file not found: {input_path}", file=sys.stderr)
         return 1
     output_path = Path(args.output) if args.output else input_path.with_suffix(".md")
+    chunks_path = output_path.with_suffix(".chunks.json")
 
     try:
+        output_paths = [output_path, chunks_path] if args.chunks else [output_path]
+        for path in output_paths:
+            if path.resolve() == input_path.resolve() or (
+                path.exists() and path.samefile(input_path)
+            ):
+                raise ValueError(f"refusing to overwrite input PDF: {path}")
         pages = parse_pages(args.pages) if args.pages else None
         markdown = convert(
             str(input_path),
@@ -88,21 +95,27 @@ def main(argv=None) -> int:
     except RuntimeError as exc:  # pymupdf.FileDataError etc. on corrupt input
         print(f"pdf2md: cannot read {input_path}: {exc}", file=sys.stderr)
         return 1
+    except OSError as exc:
+        print(f"pdf2md: cannot validate output paths: {exc}", file=sys.stderr)
+        return 1
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(markdown, encoding="utf-8")
-    summary = f"wrote {output_path}"
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(markdown, encoding="utf-8")
+        summary = f"wrote {output_path}"
 
-    if args.chunks:
-        chunks = chunk_markdown(
-            markdown, source=input_path.stem, max_chars=args.max_chars
-        )
-        chunks_path = output_path.with_suffix(".chunks.json")
-        chunks_path.write_text(
-            json.dumps(chunks, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
-        summary += f" and {chunks_path} ({len(chunks)} chunks)"
+        if args.chunks:
+            chunks = chunk_markdown(
+                markdown, source=input_path.stem, max_chars=args.max_chars
+            )
+            chunks_path.write_text(
+                json.dumps(chunks, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            summary += f" and {chunks_path} ({len(chunks)} chunks)"
+    except OSError as exc:
+        print(f"pdf2md: cannot write output: {exc}", file=sys.stderr)
+        return 1
 
     print(summary)
     return 0

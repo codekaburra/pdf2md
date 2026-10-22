@@ -7,8 +7,10 @@ Pure text functions — no PDF dependency.
 import re
 from typing import Dict, List
 
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
-_FENCE_RE = re.compile(r"^\s{0,3}(```|~~~)")
+from pdf2md._markdown import closes_fence, opening_fence
+
+_HEADING_RE = re.compile(r"^ {0,3}(#{1,6})(?:[ \t]+(.*))?$")
+_CLOSING_HASH_RE = re.compile(r"(?:^|[ \t]+)#+[ \t]*$")
 
 
 def chunk_markdown(md: str, *, source: str = "", max_chars: int = 0) -> List[Dict]:
@@ -28,7 +30,7 @@ def chunk_markdown(md: str, *, source: str = "", max_chars: int = 0) -> List[Dic
     current_heading = source or "(preamble)"
     current_level = 0
     buf: List[str] = []
-    in_fence = False
+    fence = ""
 
     def flush() -> None:
         content = "\n".join(buf).strip()
@@ -47,17 +49,22 @@ def chunk_markdown(md: str, *, source: str = "", max_chars: int = 0) -> List[Dic
         )
 
     for line in md.splitlines():
-        if _FENCE_RE.match(line):
-            in_fence = not in_fence
+        if fence:
+            if closes_fence(line, fence):
+                fence = ""
             buf.append(line)
             continue
-        heading = None if in_fence else _HEADING_RE.match(line)
+        fence = opening_fence(line)
+        if fence:
+            buf.append(line)
+            continue
+        heading = _HEADING_RE.match(line)
         if heading is None:
             buf.append(line)
             continue
         flush()
         level = len(heading.group(1))
-        title = heading.group(2).strip()
+        title = _CLOSING_HASH_RE.sub("", heading.group(2) or "").strip()
         while stack and stack[-1]["level"] >= level:
             stack.pop()
         stack.append({"level": level, "title": title})

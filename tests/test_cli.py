@@ -1,4 +1,6 @@
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +15,44 @@ def test_parse_pages_single_ranges_and_deduplicates():
 def test_parse_pages_rejects_invalid_specs(spec):
     with pytest.raises(ValueError):
         cli.parse_pages(spec)
+
+
+@pytest.mark.parametrize("artifact", ["markdown", "chunks"])
+@pytest.mark.parametrize("alias", ["direct", "relative", "symlink", "hardlink"])
+def test_main_preserves_input_when_output_aliases_it(
+    tmp_path, monkeypatch, capsys, artifact, alias
+):
+    input_pdf = tmp_path / ("report.pdf" if artifact == "markdown" else "report.chunks.json")
+    original = b"%PDF original bytes must survive"
+    input_pdf.write_bytes(original)
+    destination = input_pdf
+    if alias == "relative":
+        monkeypatch.chdir(tmp_path)
+        destination = input_pdf.relative_to(tmp_path)
+    elif alias in {"symlink", "hardlink"}:
+        destination = tmp_path / ("alias.md" if artifact == "markdown" else "alias.chunks.json")
+        if alias == "symlink":
+            destination.symlink_to(input_pdf)
+        else:
+            os.link(input_pdf, destination)
+
+    output_md = destination if artifact == "markdown" else destination.with_name(
+        destination.name.removesuffix(".chunks.json") + ".md"
+    )
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("output collisions must be rejected before conversion")
+
+    monkeypatch.setattr(cli, "convert", fail_if_called)
+    args = [str(input_pdf), "-o", str(output_md)]
+    if artifact == "chunks":
+        args.append("--chunks")
+
+    assert cli.main(args) == 1
+    assert input_pdf.read_bytes() == original
+    assert "refusing to overwrite input PDF" in capsys.readouterr().err
+    if artifact == "chunks":
+        assert not output_md.exists()
 
 
 def test_main_writes_default_output_and_uses_all_pages(tmp_path, monkeypatch, capsys):
@@ -142,3 +182,33 @@ def test_main_reports_page_parse_errors_before_conversion(tmp_path, monkeypatch,
 
     assert result == 1
     assert "invalid page range" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("stage", ["mkdir", "markdown", "chunks"])
+def test_main_reports_output_io_errors(tmp_path, monkeypatch, capsys, stage):
+    source = tmp_path / "report.pdf"
+    original = b"%PDF source"
+    source.write_bytes(original)
+    output = tmp_path / "out.md"
+    monkeypatch.setattr(cli, "convert", lambda *args, **kwargs: "# Report\n\nBody\n")
+    original_write = Path.write_text
+
+    def fail_write(path, *args, **kwargs):
+        if path == (output if stage == "markdown" else output.with_suffix(".chunks.json")):
+            raise OSError("simulated output failure")
+        return original_write(path, *args, **kwargs)
+
+    def fail_mkdir(*args, **kwargs):
+        raise PermissionError("simulated directory failure")
+
+    if stage == "mkdir":
+        monkeypatch.setattr(Path, "mkdir", fail_mkdir)
+    else:
+        monkeypatch.setattr(Path, "write_text", fail_write)
+
+    assert cli.main([str(source), "-o", str(output), "--chunks"]) == 1
+    captured = capsys.readouterr()
+    assert "cannot write output" in captured.err
+    assert "simulated" in captured.err
+    assert not captured.out
+    assert source.read_bytes() == original

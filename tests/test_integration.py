@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 
@@ -78,6 +79,36 @@ def test_scanned_pdf_raises(scanned_pdf):
         convert(str(scanned_pdf))
 
 
+@pytest.fixture
+def sparse_pdf(tmp_path):
+    path = tmp_path / "sparse.pdf"
+    with pymupdf.open() as doc:
+        doc.new_page().insert_text((72, 72), "Hello world")
+        for _ in range(6):
+            doc.new_page()
+        doc.save(path)
+    return path
+
+
+@pytest.mark.parametrize("pages", [None, [0]])
+def test_convert_sparse_text_with_blank_pages(sparse_pdf, pages):
+    assert "Hello world" in convert(str(sparse_pdf), pages=pages)
+
+
+def test_convert_checks_only_selected_pages_for_text(sparse_pdf):
+    with pytest.raises(ScannedPDFError):
+        convert(str(sparse_pdf), pages=[1, 2])
+
+
+def test_cli_converts_sparse_text_pdf(sparse_pdf):
+    result = _run_cli(str(sparse_pdf), "--chunks")
+
+    assert result.returncode == 0, result.stderr
+    assert "Hello world" in sparse_pdf.with_suffix(".md").read_text(encoding="utf-8")
+    chunks = json.loads(sparse_pdf.with_suffix(".chunks.json").read_text(encoding="utf-8"))
+    assert any("Hello world" in chunk["content"] for chunk in chunks)
+
+
 def test_chunks_from_converted_markdown(sample_pdf):
     md = convert(str(sample_pdf))
     chunks = chunk_markdown(md, source="sample")
@@ -131,9 +162,62 @@ def test_cli_end_to_end(sample_pdf, tmp_path):
     assert isinstance(chunks, list) and chunks
 
 
+def test_cli_preserves_numbered_headings_across_pages(tmp_path):
+    source = tmp_path / "sections.pdf"
+    headings = [f"{i}. Results" for i in range(1, 5)]
+    with pymupdf.open() as doc:
+        for heading, word in zip(headings, ["alpha", "bravo", "charlie", "delta"]):
+            page = doc.new_page()
+            page.insert_text((72, 100), heading, fontsize=22)
+            page.insert_text(
+                (72, 160), f"This section discusses {word} findings in detail.",
+                fontsize=11,
+            )
+        doc.save(source)
+
+    result = _run_cli(str(source), "--chunks")
+
+    assert result.returncode == 0, result.stderr
+    markdown = source.with_suffix(".md").read_text(encoding="utf-8")
+    chunks = json.loads(source.with_suffix(".chunks.json").read_text(encoding="utf-8"))
+    for heading in headings:
+        assert heading in markdown
+        assert any(heading in chunk["heading"] for chunk in chunks)
+
+
 def test_cli_missing_file(tmp_path):
     result = _run_cli(str(tmp_path / "nope.pdf"))
     assert result.returncode == 1
+
+
+@pytest.mark.parametrize("artifact", ["markdown", "chunks"])
+@pytest.mark.parametrize("alias", ["direct", "symlink", "hardlink"])
+def test_cli_preserves_source_pdf(sample_pdf, tmp_path, artifact, alias):
+    source = tmp_path / ("source.pdf" if artifact == "markdown" else "source.chunks.json")
+    original = sample_pdf.read_bytes()
+    source.write_bytes(original)
+    destination = source
+    if alias != "direct":
+        destination = tmp_path / ("alias.md" if artifact == "markdown" else "alias.chunks.json")
+        if alias == "symlink":
+            destination.symlink_to(source)
+        else:
+            os.link(source, destination)
+    output = destination if artifact == "markdown" else destination.with_name(
+        destination.name.removesuffix(".chunks.json") + ".md"
+    )
+    args = [str(source), "-o", str(output)]
+    if artifact == "chunks":
+        args.append("--chunks")
+
+    result = _run_cli(*args)
+
+    assert result.returncode == 1
+    assert "refusing to overwrite input PDF" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert source.read_bytes() == original
+    if artifact == "chunks":
+        assert not output.exists()
 
 
 def test_cli_scanned_exit_code(scanned_pdf):
@@ -160,3 +244,25 @@ def test_cli_creates_output_directory(sample_pdf, tmp_path):
     result = _run_cli(str(sample_pdf), "-o", str(out))
     assert result.returncode == 0, result.stderr
     assert out.is_file()
+
+
+@pytest.mark.parametrize("blocked", ["parent", "markdown", "chunks"])
+def test_cli_output_errors_have_no_traceback(sample_pdf, tmp_path, blocked):
+    original = sample_pdf.read_bytes()
+    output = tmp_path / "out.md"
+    if blocked == "parent":
+        parent = tmp_path / "blocked"
+        parent.write_text("existing file", encoding="utf-8")
+        output = parent / "out.md"
+    elif blocked == "markdown":
+        output.mkdir()
+    else:
+        output.with_suffix(".chunks.json").mkdir()
+
+    result = _run_cli(str(sample_pdf), "-o", str(output), "--chunks")
+
+    assert result.returncode == 1
+    assert "cannot write output" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert not result.stdout
+    assert sample_pdf.read_bytes() == original

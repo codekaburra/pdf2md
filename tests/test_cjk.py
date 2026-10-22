@@ -1,3 +1,5 @@
+import pytest
+
 from pdf2md.cjk import unwrap_cjk_code
 
 # Chinese sample data is functional here: these tests exist to prove CJK
@@ -59,6 +61,36 @@ def test_inline_spans_inside_fence_untouched():
 
 def test_unterminated_fence_emitted_verbatim():
     md = f"```\n{_PROSE}"
+    assert unwrap_cjk_code(md) == md
+
+
+@pytest.mark.parametrize(
+    "opening, inner, closing",
+    [
+        ("````markdown", "```", "````"),
+        ("```", "~~~", "```"),
+        ("~~~", "```", "~~~~"),
+        ("```", "``` trailing text", "```"),
+        ("```", "    ```", "   ````  "),
+    ],
+)
+def test_nested_fence_examples_preserved(opening, inner, closing):
+    md = f"{opening}\n{_PROSE}\n{inner}\ncode\n{closing}"
+    assert unwrap_cjk_code(md) == md
+
+
+def test_cjk_only_nested_fence_example_preserved():
+    md = f"````\n```\n{_PROSE}\n```\n````"
+    assert unwrap_cjk_code(md) == md
+
+
+@pytest.mark.parametrize("opening, closing", [("````", "`````"), ("~~~", "~~~~")])
+def test_longer_matching_fence_can_close_cjk_prose(opening, closing):
+    assert unwrap_cjk_code(f"{opening}\n{_PROSE}\n{closing}") == _PROSE
+
+
+def test_mismatched_fence_does_not_close_unterminated_block():
+    md = f"````\n{_PROSE}\n```"
     assert unwrap_cjk_code(md) == md
 
 

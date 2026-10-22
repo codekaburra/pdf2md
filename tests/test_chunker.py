@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from pdf2md.chunker import chunk_markdown
 
 SAMPLE = """intro paragraph before any heading.
@@ -40,6 +42,27 @@ def test_preamble_without_source():
     assert chunks[0]["level"] == 0
 
 
+@pytest.mark.parametrize(
+    "heading, title",
+    [
+        ("# C#", "C#"),
+        ("## F#", "F#"),
+        ("# C# ###", "C#"),
+        ("# Step 1 #", "Step 1"),
+        ("# Issue #123#", "Issue #123#"),
+        ("# Topic ###suffix", "Topic ###suffix"),
+        ("# Topic\t###\t", "Topic"),
+        ("   ### C#", "C#"),
+    ],
+)
+def test_heading_hashes_preserve_title_and_breadcrumb(heading, title):
+    chunks = chunk_markdown(f"{heading}\n\nBody\n\n#### Child\n\nDetails")
+
+    assert chunks[0]["heading"] == title
+    assert chunks[0]["path"] == title
+    assert chunks[1]["path"] == f"{title} > Child"
+
+
 def test_empty_heading_sections_skipped():
     md = "# Top\n\n## Empty parent\n\n### Child\n\ncontent here\n"
     chunks = chunk_markdown(md)
@@ -54,6 +77,29 @@ def test_hash_inside_code_fence_not_a_heading():
     assert len(chunks) == 1
     assert chunks[0]["heading"] == "Real"
     assert "# not a heading" in chunks[0]["content"]
+
+
+@pytest.mark.parametrize(
+    "opening, inner, closing",
+    [
+        ("````markdown", "```", "````"),
+        ("```", "~~~", "```"),
+        ("~~~", "```", "~~~~"),
+        ("```", "``` trailing text", "```"),
+        ("```", "    ```", "   ````  "),
+    ],
+)
+def test_only_matching_fence_closes_code_block(opening, inner, closing):
+    block = f"{opening}\n{inner}\n# not a heading\n{closing}"
+    chunks = chunk_markdown(f"# Real\n\n{block}\n\n## Next\n\nBody")
+
+    assert [chunk["heading"] for chunk in chunks] == ["Real", "Next"]
+    assert chunks[0]["content"] == block.strip()
+
+
+def test_backtick_in_info_string_is_not_an_opening_fence():
+    md = "```invalid`info\n# Real\n\nBody"
+    assert [chunk["heading"] for chunk in chunk_markdown(md)] == ["(preamble)", "Real"]
 
 
 def test_chunk_fields_and_chars():

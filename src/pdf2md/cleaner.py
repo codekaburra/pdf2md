@@ -29,6 +29,8 @@ _MAX_MASKED_LEN = 80
 # characters that appear naturally in markdown lines (e.g. "#").
 _DIGIT_MASK = "�"
 
+_HEADING_RE = re.compile(r"^ {0,3}#{1,6}(?:[ \t]|$)")
+
 # Standalone page-number lines: "12", "- 12 -", "Page 12", "Page 12 of 30",
 # "12 / 30", "第 12 頁", optionally wrapped in dashes/underscores/asterisks.
 _PAGE_NUMBER_RE = re.compile(
@@ -43,7 +45,9 @@ _PAGE_NUMBER_RE = re.compile(
 
 
 def _normalize(line: str) -> str:
-    """Collapse whitespace and mask digit runs so 'Page 3' == 'Page 27'."""
+    """Match headings verbatim; normalize digits and spacing in other lines."""
+    if _HEADING_RE.match(line):
+        return line
     return re.sub(r"\d+", _DIGIT_MASK, " ".join(line.split())).lower()
 
 
