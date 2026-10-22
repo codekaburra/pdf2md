@@ -45,7 +45,9 @@ _PAGE_NUMBER_RE = re.compile(
 
 
 def _normalize(line: str) -> str:
-    """Collapse whitespace and mask digit runs so 'Page 3' == 'Page 27'."""
+    """Match headings verbatim; normalize digits and spacing in other lines."""
+    if _HEADING_RE.match(line):
+        return line
     return re.sub(r"\d+", _DIGIT_MASK, " ".join(line.split())).lower()
 
 
@@ -65,9 +67,6 @@ def _repeating(region_sets: List[Set[str]], threshold: int) -> Set[str]:
 
 
 def _matches(line: str, keys: Set[str]) -> bool:
-    # Repeated section titles are document structure, not running headers.
-    if _HEADING_RE.match(line):
-        return False
     if _PAGE_NUMBER_RE.match(line):
         return True
     key = _normalize(line)

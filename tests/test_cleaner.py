@@ -29,6 +29,32 @@ def test_repeating_header_removed():
         assert "widgets" in page
 
 
+@pytest.mark.parametrize("level", range(1, 7))
+@pytest.mark.parametrize("edge", ["top", "bottom"])
+def test_repeating_heading_and_adjacent_page_number_removed(level, edge):
+    header = f"{'#' * level} ACME Report 2026"
+    pages = []
+    bodies = []
+    for i, word in enumerate(_WORDS[:4], 1):
+        body = f"Opening about {word}.\n\nDetails about {word}.\n\nClosing on {word}."
+        bodies.append(body)
+        margin = f"{header}\nPage {i}" if edge == "top" else f"Page {i}\n{header}"
+        pages.append(f"{margin}\n\n{body}" if edge == "top" else f"{body}\n\n{margin}")
+
+    assert clean_pages(pages) == bodies
+
+
+def test_heading_repeat_detection_uses_exact_text():
+    headings = ["# Results", "# RESULTS", "#  Results", " # Results"]
+    pages = [
+        f"{heading}\n\nUnique body about {word}."
+        for heading, word in zip(headings, _WORDS)
+    ]
+
+    for heading, page in zip(headings, clean_pages(pages)):
+        assert heading.strip() in page
+
+
 def test_footer_page_numbers_removed():
     cleaned = clean_pages(_make_pages())
     for page in cleaned:
